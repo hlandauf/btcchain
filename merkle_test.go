@@ -7,8 +7,8 @@ package btcchain_test
 import (
 	"testing"
 
-	"github.com/conformal/btcchain"
-	"github.com/conformal/btcutil"
+	"github.com/hlandauf/btcchain"
+	"github.com/hlandauf/btcutil"
 )
 
 // TestMerkle tests the BuildMerkleTreeStore API.

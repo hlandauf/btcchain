@@ -7,10 +7,10 @@ package btcchain
 import (
 	"fmt"
 
-	"github.com/conformal/btcnet"
-	"github.com/conformal/btcscript"
-	"github.com/conformal/btcutil"
-	"github.com/conformal/btcwire"
+	"github.com/hlandauf/btcnet"
+	"github.com/hlandauf/btcscript"
+	"github.com/hlandauf/btcutil"
+	"github.com/hlandauf/btcwire"
 )
 
 // CheckpointConfirmations is the number of blocks before the end of the current

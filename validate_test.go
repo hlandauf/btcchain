@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/conformal/btcchain"
-	"github.com/conformal/btcnet"
-	"github.com/conformal/btcutil"
-	"github.com/conformal/btcwire"
+	"github.com/hlandauf/btcchain"
+	"github.com/hlandauf/btcnet"
+	"github.com/hlandauf/btcutil"
+	"github.com/hlandauf/btcwire"
 )
 
 // TestCheckConnectBlock tests the CheckConnectBlock function to ensure it

@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/conformal/btcchain"
+	"github.com/hlandauf/btcchain"
 )
 
 // TestTimeSorter tests the timeSorter implementation.

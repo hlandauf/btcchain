@@ -6,11 +6,11 @@ package btcchain_test
 
 import (
 	"fmt"
-	"github.com/conformal/btcchain"
-	"github.com/conformal/btcdb"
-	_ "github.com/conformal/btcdb/memdb"
-	"github.com/conformal/btcnet"
-	"github.com/conformal/btcutil"
+	"github.com/hlandauf/btcchain"
+	"github.com/hlandauf/btcdb"
+	_ "github.com/hlandauf/btcdb/memdb"
+	"github.com/hlandauf/btcnet"
+	"github.com/hlandauf/btcutil"
 	"math/big"
 )
 

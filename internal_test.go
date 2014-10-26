@@ -15,7 +15,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/conformal/btcutil"
+	"github.com/hlandauf/btcutil"
 )
 
 // TstSetCoinbaseMaturity makes the ability to set the coinbase maturity

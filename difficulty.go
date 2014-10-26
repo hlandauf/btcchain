@@ -9,7 +9,7 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/conformal/btcwire"
+	"github.com/hlandauf/btcwire"
 )
 
 const (

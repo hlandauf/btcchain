@@ -9,12 +9,12 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/conformal/btcchain"
-	"github.com/conformal/btcdb"
-	_ "github.com/conformal/btcdb/ldb"
-	_ "github.com/conformal/btcdb/memdb"
-	"github.com/conformal/btcnet"
-	"github.com/conformal/btcutil"
+	"github.com/hlandauf/btcchain"
+	"github.com/hlandauf/btcdb"
+	_ "github.com/hlandauf/btcdb/ldb"
+	_ "github.com/hlandauf/btcdb/memdb"
+	"github.com/hlandauf/btcnet"
+	"github.com/hlandauf/btcutil"
 )
 
 // testDbType is the database backend type to use for the tests.

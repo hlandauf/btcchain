@@ -7,7 +7,7 @@ package btcchain
 import (
 	"fmt"
 
-	"github.com/conformal/btcutil"
+	"github.com/hlandauf/btcutil"
 )
 
 // maybeAcceptBlock potentially accepts a block into the memory block chain.
