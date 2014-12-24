@@ -106,17 +106,27 @@ func (b *BlockChain) maybeAcceptBlock(block *btcutil.Block, flags BehaviorFlags)
 		return ruleError(ErrForkTooOld, str)
 	}
 
+	// Reject Auxpow blocks which are not allowed.
+	if blockHeader.AuxPow() {
+		if !b.netParams.AllowAuxPow {
+			return ruleError(ErrAuxpowNotAllowed, "Auxpow not allowed on this block chain")
+		}
+		if blockHeight < b.netParams.AuxPowStartBlock {
+			return ruleError(ErrAuxpowNotAllowed, "Auxpow not allowed at this height")
+		}
+	}
+
 	if !fastAdd {
 		// Reject version 1 blocks once a majority of the network has
 		// upgraded.  This is part of BIP0034.
-		if blockHeader.Version < 2 {
+		if blockHeader.BlockVersion() < 2 {
 			if b.isMajorityVersion(2, prevNode,
 				b.netParams.BlockV1RejectNumRequired,
 				b.netParams.BlockV1RejectNumToCheck) {
 
 				str := "new blocks with version %d are no " +
 					"longer valid"
-				str = fmt.Sprintf(str, blockHeader.Version)
+				str = fmt.Sprintf(str, blockHeader.BlockVersion())
 				return ruleError(ErrBlockVersionTooOld, str)
 			}
 		}
@@ -125,7 +135,7 @@ func (b *BlockChain) maybeAcceptBlock(block *btcutil.Block, flags BehaviorFlags)
 		// blocks whose version is the serializedHeightVersion or
 		// newer once a majority of the network has upgraded.  This is
 		// part of BIP0034.
-		if blockHeader.Version >= serializedHeightVersion {
+		if blockHeader.BlockVersion() >= serializedHeightVersion {
 			if b.isMajorityVersion(serializedHeightVersion,
 				prevNode,
 				b.netParams.CoinbaseBlockHeightNumRequired,

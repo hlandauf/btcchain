@@ -293,10 +293,19 @@ func (b *BlockChain) calcNextRequiredDifficulty(lastNode *blockNode, newBlockTim
 		return lastNode.bits, nil
 	}
 
+	// NAMECOIN: Added for Namecoin compatibility. Used only if
+	// netParams.FullRetargetStartBlock != 0.
+	nBlocksBack := BlocksPerRetarget - 1
+	if b.netParams.FullRetargetStartBlock != 0 &&
+		lastNode.height+1 > BlocksPerRetarget &&
+		lastNode.height >= b.netParams.FullRetargetStartBlock {
+		nBlocksBack = BlocksPerRetarget
+	}
+
 	// Get the block node at the previous retarget (targetTimespan days
 	// worth of blocks).
 	firstNode := lastNode
-	for i := int64(0); i < BlocksPerRetarget-1 && firstNode != nil; i++ {
+	for i := int64(0); i < nBlocksBack && firstNode != nil; i++ {
 		// Get the previous block node.  This function is used over
 		// simply accessing firstNode.parent directly as it will
 		// dynamically create previous block nodes as needed.  This
@@ -334,6 +343,7 @@ func (b *BlockChain) calcNextRequiredDifficulty(lastNode *blockNode, newBlockTim
 
 	// Limit new value to the proof of work limit.
 	if newTarget.Cmp(b.netParams.PowLimit) > 0 {
+		log.Debugf("Difficulty retarget exceeded PoW limit")
 		newTarget.Set(b.netParams.PowLimit)
 	}
 
@@ -345,9 +355,9 @@ func (b *BlockChain) calcNextRequiredDifficulty(lastNode *blockNode, newBlockTim
 	log.Debugf("Difficulty retarget at block height %d", lastNode.height+1)
 	log.Debugf("Old target %08x (%064x)", lastNode.bits, oldTarget)
 	log.Debugf("New target %08x (%064x)", newTargetBits, CompactToBig(newTargetBits))
-	log.Debugf("Actual timespan %v, adjusted timespan %v, target timespan %v",
-		time.Duration(actualTimespan), time.Duration(adjustedTimespan),
-		targetTimespan)
+	log.Debugf("Actual timespan %d, adjusted timespan %d, target timespan %d",
+		int64(time.Duration(actualTimespan).Seconds()), int64(time.Duration(adjustedTimespan).Seconds()),
+		int64(targetTimespan.Seconds()))
 
 	return newTargetBits, nil
 }

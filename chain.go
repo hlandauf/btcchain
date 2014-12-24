@@ -89,7 +89,7 @@ func newBlockNode(blockHeader *btcwire.BlockHeader, blockSha *btcwire.ShaHash, h
 		parentHash: &prevHash,
 		workSum:    CalcWork(blockHeader.Bits),
 		height:     height,
-		version:    blockHeader.Version,
+		version:    blockHeader.BlockVersion(),
 		bits:       blockHeader.Bits,
 		timestamp:  blockHeader.Timestamp,
 	}

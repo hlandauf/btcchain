@@ -5,6 +5,7 @@
 package btcchain
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"math"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/hlandauf/btcdb"
+	"github.com/hlandauf/btcnamedb"
 	"github.com/hlandauf/btcnet"
 	"github.com/hlandauf/btcscript"
 	"github.com/hlandauf/btcutil"
@@ -68,16 +70,6 @@ var (
 	// a package level variable to avoid the need to create a new instance
 	// every time a check is needed.
 	zeroHash = &btcwire.ShaHash{}
-
-	// block91842Hash is one of the two nodes which violate the rules
-	// set forth in BIP0030.  It is defined as a package level variable to
-	// avoid the need to create a new instance every time a check is needed.
-	block91842Hash = newShaHashFromStr("00000000000a4d0a398161ffc163c503763b1f4360639393e0e4c8e300e0caec")
-
-	// block91880Hash is one of the two nodes which violate the rules
-	// set forth in BIP0030.  It is defined as a package level variable to
-	// avoid the need to create a new instance every time a check is needed.
-	block91880Hash = newShaHashFromStr("00000000000743f190a18c5577a3c2d2a1f610ae9601ac046a38084ccb7cd721")
 )
 
 // isNullOutpoint determines whether or not a previous transaction output point
@@ -150,16 +142,13 @@ func IsFinalizedTransaction(tx *btcutil.Tx, blockHeight int64, blockTime time.Ti
 // isBIP0030Node returns whether or not the passed node represents one of the
 // two blocks that violate the BIP0030 rule which prevents transactions from
 // overwriting old ones.
-func isBIP0030Node(node *blockNode) bool {
-	if node.height == 91842 && node.hash.IsEqual(block91842Hash) {
-		return true
-	}
+func (b *BlockChain) isBIP0030Node(node *blockNode) bool {
+  f := b.netParams.IsBIP30ExceptionFunc
+  if f == nil {
+    return false
+  }
 
-	if node.height == 91880 && node.hash.IsEqual(block91880Hash) {
-		return true
-	}
-
-	return false
+  return f(node.height, node.hash)
 }
 
 // CalcBlockSubsidy returns the subsidy amount a block at the provided height
@@ -312,14 +301,190 @@ func checkProofOfWork(block *btcutil.Block, powLimit *big.Int, flags BehaviorFla
 		}
 		hashNum := ShaHashToBig(blockHash)
 		if hashNum.Cmp(target) > 0 {
-			str := fmt.Sprintf("block hash of %064x is higher than "+
-				"expected max of %064x", hashNum, target)
-			return ruleError(ErrHighHash, str)
+			b := block.MsgBlock()
+			if !b.Header.AuxPow() {
+				str := fmt.Sprintf("block hash of %064x is higher than "+
+					"expected max of %064x", hashNum, target)
+				return ruleError(ErrHighHash, str)
+			}
+			err := checkAuxPow(b, blockHash, target)
+			if err != nil {
+				return err
+			}
 		}
 	}
 
 	return nil
 }
+
+func checkAuxPow(b *btcwire.MsgBlock, blockHash *btcwire.ShaHash, target *big.Int) error {
+	if !b.Header.AuxPow() {
+		panic("must be called on an auxpow block")
+	}
+
+	// Step 1. Determine the root hash of the block chain merkle tree.
+	rootHash, err := b.Header.AuxPowHeader.BlockChainBranch.DetermineRoot(blockHash)
+	if err != nil {
+		return err
+	}
+
+	// Step 2. Ensure that the coinbase transaction nominates the root hash
+	//         of the block chain merkle tree.
+	err = checkAuxPowCoinbase(b, rootHash)
+	if err != nil {
+		return err
+	}
+
+	// Step 3. Determine the hash of the coinbase transaction.
+	coinbaseTxHash, err := b.Header.AuxPowHeader.CoinbaseTx.TxSha()
+	if err != nil {
+		return err
+	}
+
+	// Step 4. Ensure that the coinbase transaction is included in the parent
+	//         block.
+	if !b.Header.AuxPowHeader.CoinbaseBranch.HasRoot(&coinbaseTxHash,
+		&b.Header.AuxPowHeader.ParentBlockHeader.MerkleRoot) {
+		return ruleError(ErrAuxpowParentMerkle,
+			"Auxpow parent block's merkle tree does not include auxpow coinbase")
+	}
+
+	// Step 5. Determine the hash of the parent block.
+	//         (The hash field in the AuxPow structure is vestigal and ignored.)
+	parentSha, _ := b.Header.AuxPowHeader.ParentBlockHeader.BlockSha()
+
+	// Step 6. Ensure that the hash of the parent block meets the difficulty requirement.
+	parentShaNum := ShaHashToBig(&parentSha)
+	if parentShaNum.Cmp(target) > 0 {
+		str := fmt.Sprintf(
+			"Auxpow parent block hash of %064x is higher than expected max of %064x",
+			parentShaNum, target)
+		return ruleError(ErrHighHash, str)
+	}
+
+	return nil
+}
+
+func reverseBytes(b []byte) {
+	L := len(b)
+	for i := 0; i < L/2; i++ {
+		b[i], b[L-i-1] = b[L-i-1], b[i]
+	}
+}
+
+func reverseHash(h btcwire.ShaHash) (r [btcwire.HashSize]byte) {
+	b := make([]byte, btcwire.HashSize)
+	copy(b, h[0:btcwire.HashSize])
+	reverseBytes(b)
+	copy(r[:], b[0:btcwire.HashSize])
+	return
+}
+
+func checkAuxPowCoinbase(b *btcwire.MsgBlock, blockHash *btcwire.ShaHash) error {
+	if len(b.Transactions) == 0 {
+		panic("no transactions in block which should already have been sanity-checked")
+	}
+
+	coinbaseMsgTx := &b.Header.AuxPowHeader.CoinbaseTx
+	coinbaseTx := btcutil.NewTx(coinbaseMsgTx)
+
+	if !IsCoinBase(coinbaseTx) {
+		return ruleError(ErrAuxpowBadTx, "Auxpow transaction is not coinbase")
+	}
+
+	if len(coinbaseMsgTx.TxIn) != 1 {
+		return ruleError(ErrAuxpowBadTx, "Auxpow transaction has irregular number of inputs")
+	}
+
+	txIn := coinbaseMsgTx.TxIn[0]
+	script := txIn.SignatureScript
+
+	// Block hash in big endian form
+	rBlockHash := reverseHash(*blockHash)
+
+	hashPos := bytes.Index(script, rBlockHash[:])
+	if hashPos < 0 {
+		// Auxillary block hash not found in coinbase input, so this coinbase input does
+		// not nominate this auxillary block and validation fails.
+		fmt.Printf("  Script:  %x\n", script)
+		str := fmt.Sprintf("Auxpow block hash %s not found in parent block's coinbase input (%x) (%x)",
+			blockHash.String(), blockHash[:], rBlockHash[:])
+		return ruleError(ErrAuxpowCoinbaseHashNotFound, str)
+	}
+
+	headerPos := bytes.Index(script, auxPowHeader)
+	if headerPos >= 0 {
+		// AuxPOW header was found.
+
+		// Namecoin: "Enforce only one chain merkle root by checking that a single instance
+		// instance of the merged mining header exists just before."
+		//
+		// The code then proceeds to search the string beginning one byte after headerPos
+		// for the auxPowHeader.
+		//
+		// This excludes any auxpow block the header of which contains 0xFA,0xBE,'m','m'.
+		// But since bug-for-bug compatibility is the order of the day...
+		headerPosA := bytes.Index(script[headerPos+1:], auxPowHeader)
+		if headerPosA >= 0 {
+			// Multiple merged mining headers in coinbase
+			return ruleError(ErrAuxpowMultipleHeaders,
+				"Multiple auxpow headers found in parent block's coinbase input")
+		}
+
+		if (headerPos + len(auxPowHeader)) != hashPos {
+			// Merged mining header is not just before chain merkle root
+			return ruleError(ErrAuxpowBadHashPosition,
+				"Auxpow coinbase's input has hash at wrong position")
+		}
+	} else {
+		// AuxPOW header was not found.
+		// For backward compatibility.
+		if hashPos > 20 {
+			// AuxPOW merkle chain must start in the first 20 bytes of the parent coinbase.
+			return ruleError(ErrAuxpowNoHeader,
+				"Auxpow coinbase's input must have header or hash starting within first 20 bytes")
+		}
+	}
+
+	paramsPos := hashPos + btcwire.HashSize
+	if (len(script) - paramsPos) < 8 {
+		// Malformed AuxPOW structure in parent coinbase.
+		return ruleError(ErrAuxpowMalformedCoinbase,
+			"Auxpow coinbase does not contain room for params")
+	}
+
+	// "Ensure we are at a deterministic point in the merkle leaves by
+	//  hashing a nonce and our chain ID and comparing to the index."
+	mSize := binary.LittleEndian.Uint32(script[paramsPos : paramsPos+4])
+	if mSize != (1 << b.Header.AuxPowHeader.BlockChainBranch.Size()) {
+		// AuxPOW coinbase merkle branch size does not match parent coinbase.
+		return ruleError(ErrAuxpowWrongSize,
+			"Auxpow coinbase does not specify correct merkle branch size")
+	}
+
+	// "Choose a psuedo-random slot in the chain merkle tree but have it
+	//  be fixed for a size/nonce/chain combination.
+	//
+	//  This prevents the same work from being used twice for the same
+	//  chain while reducing the chance that two chains clash for the
+	//  same slot."
+	mNonce := binary.LittleEndian.Uint32(script[paramsPos+4 : paramsPos+8])
+
+	r := mNonce
+	r = r*1103515245 + 12345
+	r += b.Header.ChainID()
+	r = r*1103515245 + 12345
+
+	if b.Header.AuxPowHeader.BlockChainBranch.SideMask != (r % mSize) {
+		// AuxPOW wrong index.
+		return ruleError(ErrAuxpowWrongIndex,
+			"Auxpow coinbase does not specify correct index")
+	}
+
+	return nil
+}
+
+var auxPowHeader []byte = []byte{0xFA, 0xBE, 'm', 'm'}
 
 // CheckProofOfWork ensures the block header bits which indicate the target
 // difficulty is in min/max range and that the block hash is less than the
@@ -658,7 +823,7 @@ func (b *BlockChain) checkBIP0030(node *blockNode, block *btcutil.Block) error {
 // amount, and verifying the signatures to prove the spender was the owner of
 // the bitcoins and therefore allowed to spend them.  As it checks the inputs,
 // it also calculates the total fees for the transaction and returns that value.
-func CheckTransactionInputs(tx *btcutil.Tx, txHeight int64, txStore TxStore) (int64, error) {
+func CheckTransactionInputs(tx *btcutil.Tx, txHeight int64, txStore TxStore, nameDB btcnamedb.DB) (int64, error) {
 	// Coinbase transactions have no inputs.
 	if IsCoinBase(tx) {
 		return 0, nil
@@ -759,11 +924,207 @@ func CheckTransactionInputs(tx *btcutil.Tx, txHeight int64, txStore TxStore) (in
 		return 0, ruleError(ErrSpendTooHigh, str)
 	}
 
+  if nameDB != nil {
+    err := CheckNameTransaction(tx, txHeight, txStore, nameDB)
+    if err != nil {
+      return 0, err
+    }
+  }
+
 	// NOTE: bitcoind checks if the transaction fees are < 0 here, but that
 	// is an impossible condition because of the check above that ensures
 	// the inputs are >= the outputs.
 	txFeeInSatoshi := totalSatoshiIn - totalSatoshiOut
 	return txFeeInSatoshi, nil
+}
+
+func CheckNameTransaction(tx *btcutil.Tx, txHeight int64, txStore TxStore, nameDB btcnamedb.DB) error {
+	txHashHex := tx.Sha().String()
+
+	if _, isBug := btcnet.IsHistoricBug(txHeight, tx.Sha()); isBug {
+		return nil
+	}
+
+	// Try to locate inputs and outputs of the transaction that are name scripts.
+	// At most one input and output should be a name operation.
+	nameIn := -1
+	var nameOpIn *btcscript.NameScript
+  var coinsIn *TxData
+
+	for i, txIn := range tx.MsgTx().TxIn {
+    prevOut := txIn.PreviousOutPoint
+    c, ok := txStore[prevOut.Hash]
+    if !ok {
+      return fmt.Errorf("cannot find input transaction: %v", prevOut.Hash)
+    }
+
+    prevOutPk := c.Tx.MsgTx().TxOut[prevOut.Index].PkScript
+    // TODO: make *Script...
+
+    ns, err := btcscript.NewNameScriptFromPk(prevOutPk)
+    if err == nil { // is name op
+      if nameIn != -1 {
+        return ruleError(ErrMultipleNameInputs,
+          fmt.Sprintf("multiple name inputs into transaction %s", txHashHex))
+      }
+
+      nameIn = i
+      nameOpIn = ns
+      coinsIn = c
+    }
+	}
+
+  nameOut := -1
+  var nameOpOut *btcscript.NameScript
+
+  for i, txOut := range tx.MsgTx().TxOut {
+    ns, err := btcscript.NewNameScriptFromPk(txOut.PkScript)
+    if err == nil { // is name op
+      if nameOut != -1 {
+        return ruleError(ErrMultipleNameOutputs,
+          fmt.Sprintf("multiple name outputs from transaction %s", txHashHex))
+      }
+
+      nameOut = i
+      nameOpOut = ns
+    } else {
+      //fmt.Printf("*** namescript: %v\n", err)
+    }
+  }
+
+  // Check that no inputs/outputs are present for a non-Namecoin tx.
+  // If that's the case, all is fine. For a Namecoin tx instead, there
+  // should be at least an output (for NAME_NEW, no inputs are expected.)
+	if !tx.MsgTx().IsNamecoin() {
+    if nameIn != -1 {
+      return ruleError(ErrNonNameTxHasNameInputs,
+        fmt.Sprintf("non-Namecoin tx %s has name inputs", txHashHex))
+    }
+
+    if nameOut != -1 {
+      // Possibly allow NAME_NEWs with non-Namecoin version. Many of these
+      // appear in the blockchain, as they were accepted by the old client.
+      if btcwire.NamecoinLenientVersionCheck(txHeight) &&
+        nameOpOut.NameOp() == btcscript.OP_NAME_NEW {
+          // TODO: log warning
+          // ...
+      } else {
+        return ruleError(ErrNonNameTxHasNameOutputs,
+          fmt.Sprintf("non-Namecoin tx %s has name outputs", txHashHex))
+      }
+    }
+
+		return nil
+	}
+
+  if nameOut == -1 {
+    return ruleError(ErrNoNameOutputs,
+      fmt.Sprintf("Namecoin tx %s has no name outputs", txHashHex))
+  }
+
+  // TODO: is MempoolHeight used in btcd?
+
+  // For now, only reject "greedy" names in the mempool. This will be
+  // changed with a softfork in the future.
+  if txHeight == MempoolHeight && tx.MsgTx().TxOut[nameOut].Value < btcwire.NameLockedAmount {
+    return ruleError(ErrGreedyName, "rejecting greedy name from mempool")
+  }
+
+  // Handle NAME_NEW now, since this is easy and different from the other
+  // operations.
+  if nameOpOut.NameOp() == btcscript.OP_NAME_NEW {
+    if nameIn != -1 {
+      return ruleError(ErrNameNewWithPreviousNameInput,
+        fmt.Sprintf("NAME_NEW with previous name input in tx %s", txHashHex))
+    }
+
+    opHash := nameOpOut.OpHash()
+    if len(opHash) != 20 {
+      return ruleError(ErrNameArgumentWrongSize,
+        fmt.Sprintf("NAME_NEW hash is not the correct size in tx %s", txHashHex))
+    }
+
+    return nil
+  }
+
+  // Now that we have ruled out NAME_NEW, check that we have a previous
+  // name input that is being updated.
+  if nameIn == -1 {
+    return ruleError(ErrNameUpdateWithoutPreviousNameInput,
+      fmt.Sprintf("name update operation without previous name input in tx %s", txHashHex))
+  }
+
+  name := nameOpOut.OpName()
+  if len(name) > btcwire.MaxNameLength {
+    return ruleError(ErrNameTooLong, "name too long")
+  }
+
+  value := nameOpOut.OpValue()
+  if len(value) > btcwire.MaxNameValueLength {
+    return ruleError(ErrNameValueTooLong, "name value too long")
+  }
+
+  // Process NAME_UPDATE.
+  if nameOpOut.NameOp() == btcscript.OP_NAME_UPDATE {
+    if !nameOpIn.IsAnyUpdate() {
+      return ruleError(ErrNameUpdateWithNonUpdateInput,
+        fmt.Sprintf("NAME_UPDATE with previous input that is not an update in tx %s", txHashHex))
+    }
+
+    if name != nameOpIn.OpName() {
+      return ruleError(ErrNameUpdateMismatch,
+        fmt.Sprintf("NAME_UPDATE name mismatch to prev tx found in tx %s", txHashHex))
+    }
+
+    if btcwire.IsNameExpired(coinsIn.BlockHeight, txHeight) {
+      return ruleError(ErrNameExpired,
+        fmt.Sprintf("Trying to update expired name in tx %s", txHashHex))
+    }
+
+    return nil
+  }
+
+  // Finally, NAME_FIRSTUPDATE.
+  if nameOpIn.NameOp() != btcscript.OP_NAME_NEW {
+    return ruleError(ErrNameFirstUpdateWithNonNewInput,
+      fmt.Sprintf("NAME_FIRSTUPDATE with previous input that is not NAME_NEW in tx %s", txHashHex))
+  }
+
+  if txHeight != MempoolHeight {
+    if coinsIn.BlockHeight + btcwire.MinFirstUpdateDepth > txHeight {
+      return ruleError(ErrNameNotMatured,
+        fmt.Sprintf("NAME_NEW is not mature for NAME_FIRSTUPDATE in tx %s", txHashHex))
+    }
+  }
+
+  opRand := nameOpOut.OpRand()
+  if len(opRand) > 20 {
+    return ruleError(ErrNameArgumentWrongSize,
+      fmt.Sprintf("NAME_FIRSTUPDATE rand too large (%d bytes, tx %s)",
+        len(opRand), txHashHex))
+  }
+
+  inHash := nameOpIn.OpHash()
+  hash := string(btcutil.Hash160([]byte(opRand + name)))
+  if hash != inHash {
+    return ruleError(ErrNameHashMismatch,
+      fmt.Sprintf("NAME_FIRSTUPDATE hash mismatch in tx %s", txHashHex))
+  }
+
+  // Check old names.
+  oldName, err := nameDB.GetByKey(name)
+  if err == nil {
+    if !btcwire.IsNameExpired(oldName.Height, txHeight) {
+      return ruleError(ErrNameFirstUpdateOnUnexpiredName,
+        fmt.Sprintf("NAME_FIRSTUPDATE on an unexpired name: %v at height %d (old height: %d)", name, txHeight, oldName.Height))
+    }
+  }
+
+  // We don't have to specifically check that miners don't create blocks
+  // with conflicting NAME_FIRSTUPDATEs, since the mining's CCoinsViewCache
+  // takes care of this with the check above already.
+
+	return nil
 }
 
 // checkConnectBlock performs several checks to confirm connecting the passed
@@ -799,7 +1160,7 @@ func (b *BlockChain) checkConnectBlock(node *blockNode, block *btcutil.Block) er
 	// rule, so the check must be skipped for those blocks. The
 	// isBIP0030Node function is used to determine if this block is one
 	// of the two blocks that must be skipped.
-	enforceBIP0030 := !isBIP0030Node(node)
+	enforceBIP0030 := !b.isBIP0030Node(node)
 	if enforceBIP0030 {
 		err := b.checkBIP0030(node, block)
 		if err != nil {
@@ -871,7 +1232,7 @@ func (b *BlockChain) checkConnectBlock(node *blockNode, block *btcutil.Block) er
 	// bounds.
 	var totalFees int64
 	for _, tx := range transactions {
-		txFee, err := CheckTransactionInputs(tx, node.height, txInputStore)
+		txFee, err := CheckTransactionInputs(tx, node.height, txInputStore, b.db.NameDB())
 		if err != nil {
 			return err
 		}

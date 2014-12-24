@@ -178,48 +178,175 @@ const (
 	// such signature verification failures and execution past the end of
 	// the stack.
 	ErrScriptValidation
+
+	// ErrAuxpowCoinbaseHashNotFound indicates that an auxpow block was
+	// encountered the nominating parent coinbase of which does not appear to
+	// contain the hash of the auxpow block.
+	ErrAuxpowCoinbaseHashNotFound
+
+	// ErrAuxpowParentMerkle indicates that an auxpow block was encountered
+	// but the merkle branch provided does not prove that the nominating
+	// parent coinbase transaction is included in the parent block's
+	// merkle tree.
+	ErrAuxpowParentMerkle
+
+	// ErrAuxpowBadHashPosition indicates that an auxpow block was encountered
+	// but the nominating parent coinbase transaction does not contain the
+	// hash of the auxpow block at the correct position.
+	ErrAuxpowBadHashPosition
+
+	// ErrAuxpowMalformedCoinbase indicates that an auxpow block was encountered
+	// but the nominating parent coinbase transaction does not contain a correctly
+	// formed auxpow structure.
+	ErrAuxpowMalformedCoinbase
+
+	// ErrAuxpowNoHeader indicates that an auxpow block was encountered but the
+	// nominating parent coinbase transaction does not contain an auxpow header.
+	ErrAuxpowNoHeader
+
+	// ErrAuxpowMultipleHeaders indicates that an auxpow block was encountered
+	// but the nominating parent coinbase transaction appears to contain multiple
+	// auxpow headers.
+	ErrAuxpowMultipleHeaders
+
+	// ErrAuxpowWrongSize indicates that the size field in the nominating parent
+	// coinbase transaction is incorrect.
+	ErrAuxpowWrongSize
+
+	// ErrAuxpowWrongIndex indicates that the index field in the nominating parent
+	// coinbase transaction is incorrect.
+	ErrAuxpowWrongIndex
+
+	// ErrAuxpowBadTx indicates that the parent block coinbase transaction
+	// is malformed.
+	ErrAuxpowBadTx
+
+	// ErrAuxpowNotAllowed indicates that an auxpow block was found on a chain where
+	// auxpow is not allowed or at a height where auxpow is not allowed.
+	ErrAuxpowNotAllowed
+
+  // ErrMultipleNameInputs
+  ErrMultipleNameInputs
+
+  // ErrMultipleNameOutputs
+  ErrMultipleNameOutputs
+
+  // ErrGreedyName
+  ErrGreedyName
+
+  // ErrNoNameOutputs
+  ErrNoNameOutputs
+
+  // ErrNameNewWithPreviousNameInput
+  ErrNameNewWithPreviousNameInput
+
+  // ErrNonNameTxHasNameInputs
+  ErrNonNameTxHasNameInputs
+
+  // ErrNonNameTxHasNameOutputs
+  ErrNonNameTxHasNameOutputs
+
+  // ErrNameTooLong
+  ErrNameTooLong
+
+  // ErrNameValueTooLong
+  ErrNameValueTooLong
+
+  // ErrNameUpdateMismatch
+  ErrNameUpdateMismatch
+
+  // ErrNameUpdateWithNonUpdateInput
+  ErrNameUpdateWithNonUpdateInput
+
+  // ErrNameUpdateWithoutPreviousNameInput
+  ErrNameUpdateWithoutPreviousNameInput
+
+  // ErrNameExpired
+  ErrNameExpired
+
+  // ErrNameArgumentWrongSize
+  ErrNameArgumentWrongSize
+
+  // ErrNameNotMatured
+  ErrNameNotMatured
+
+  // ErrNameFirstUpdateWithNonNewInput
+  ErrNameFirstUpdateWithNonNewInput
+
+  // ErrNameHashMismatch
+  ErrNameHashMismatch
+
+  // ErrNameFirstUpdateOnExpiredName
+  ErrNameFirstUpdateOnUnexpiredName
 )
 
 // Map of ErrorCode values back to their constant names for pretty printing.
 var errorCodeStrings = map[ErrorCode]string{
-	ErrDuplicateBlock:        "ErrDuplicateBlock",
-	ErrBlockTooBig:           "ErrBlockTooBig",
-	ErrBlockVersionTooOld:    "ErrBlockVersionTooOld",
-	ErrInvalidTime:           "ErrInvalidTime",
-	ErrTimeTooOld:            "ErrTimeTooOld",
-	ErrTimeTooNew:            "ErrTimeTooNew",
-	ErrDifficultyTooLow:      "ErrDifficultyTooLow",
-	ErrUnexpectedDifficulty:  "ErrUnexpectedDifficulty",
-	ErrHighHash:              "ErrHighHash",
-	ErrBadMerkleRoot:         "ErrBadMerkleRoot",
-	ErrBadCheckpoint:         "ErrBadCheckpoint",
-	ErrForkTooOld:            "ErrForkTooOld",
-	ErrCheckpointTimeTooOld:  "ErrCheckpointTimeTooOld",
-	ErrNoTransactions:        "ErrNoTransactions",
-	ErrTooManyTransactions:   "ErrTooManyTransactions",
-	ErrNoTxInputs:            "ErrNoTxInputs",
-	ErrNoTxOutputs:           "ErrNoTxOutputs",
-	ErrTxTooBig:              "ErrTxTooBig",
-	ErrBadTxOutValue:         "ErrBadTxOutValue",
-	ErrDuplicateTxInputs:     "ErrDuplicateTxInputs",
-	ErrBadTxInput:            "ErrBadTxInput",
-	ErrMissingTx:             "ErrMissingTx",
-	ErrUnfinalizedTx:         "ErrUnfinalizedTx",
-	ErrDuplicateTx:           "ErrDuplicateTx",
-	ErrOverwriteTx:           "ErrOverwriteTx",
-	ErrImmatureSpend:         "ErrImmatureSpend",
-	ErrDoubleSpend:           "ErrDoubleSpend",
-	ErrSpendTooHigh:          "ErrSpendTooHigh",
-	ErrBadFees:               "ErrBadFees",
-	ErrTooManySigOps:         "ErrTooManySigOps",
-	ErrFirstTxNotCoinbase:    "ErrFirstTxNotCoinbase",
-	ErrMultipleCoinbases:     "ErrMultipleCoinbases",
-	ErrBadCoinbaseScriptLen:  "ErrBadCoinbaseScriptLen",
-	ErrBadCoinbaseValue:      "ErrBadCoinbaseValue",
-	ErrMissingCoinbaseHeight: "ErrMissingCoinbaseHeight",
-	ErrBadCoinbaseHeight:     "ErrBadCoinbaseHeight",
-	ErrScriptMalformed:       "ErrScriptMalformed",
-	ErrScriptValidation:      "ErrScriptValidation",
+	ErrDuplicateBlock:             "ErrDuplicateBlock",
+	ErrBlockTooBig:                "ErrBlockTooBig",
+	ErrBlockVersionTooOld:         "ErrBlockVersionTooOld",
+	ErrInvalidTime:                "ErrInvalidTime",
+	ErrTimeTooOld:                 "ErrTimeTooOld",
+	ErrTimeTooNew:                 "ErrTimeTooNew",
+	ErrDifficultyTooLow:           "ErrDifficultyTooLow",
+	ErrUnexpectedDifficulty:       "ErrUnexpectedDifficulty",
+	ErrHighHash:                   "ErrHighHash",
+	ErrBadMerkleRoot:              "ErrBadMerkleRoot",
+	ErrBadCheckpoint:              "ErrBadCheckpoint",
+	ErrForkTooOld:                 "ErrForkTooOld",
+	ErrCheckpointTimeTooOld:       "ErrCheckpointTimeTooOld",
+	ErrNoTransactions:             "ErrNoTransactions",
+	ErrTooManyTransactions:        "ErrTooManyTransactions",
+	ErrNoTxInputs:                 "ErrNoTxInputs",
+	ErrNoTxOutputs:                "ErrNoTxOutputs",
+	ErrTxTooBig:                   "ErrTxTooBig",
+	ErrBadTxOutValue:              "ErrBadTxOutValue",
+	ErrDuplicateTxInputs:          "ErrDuplicateTxInputs",
+	ErrBadTxInput:                 "ErrBadTxInput",
+	ErrMissingTx:                  "ErrMissingTx",
+	ErrUnfinalizedTx:              "ErrUnfinalizedTx",
+	ErrDuplicateTx:                "ErrDuplicateTx",
+	ErrOverwriteTx:                "ErrOverwriteTx",
+	ErrImmatureSpend:              "ErrImmatureSpend",
+	ErrDoubleSpend:                "ErrDoubleSpend",
+	ErrSpendTooHigh:               "ErrSpendTooHigh",
+	ErrBadFees:                    "ErrBadFees",
+	ErrTooManySigOps:              "ErrTooManySigOps",
+	ErrFirstTxNotCoinbase:         "ErrFirstTxNotCoinbase",
+	ErrMultipleCoinbases:          "ErrMultipleCoinbases",
+	ErrBadCoinbaseScriptLen:       "ErrBadCoinbaseScriptLen",
+	ErrBadCoinbaseValue:           "ErrBadCoinbaseValue",
+	ErrMissingCoinbaseHeight:      "ErrMissingCoinbaseHeight",
+	ErrBadCoinbaseHeight:          "ErrBadCoinbaseHeight",
+	ErrScriptMalformed:            "ErrScriptMalformed",
+	ErrScriptValidation:           "ErrScriptValidation",
+	ErrAuxpowCoinbaseHashNotFound: "ErrAuxpowCoinbaseHashNotFound",
+	ErrAuxpowParentMerkle:         "ErrAuxpowParentMerkle",
+	ErrAuxpowBadHashPosition:      "ErrAuxpowBadHashPosition",
+	ErrAuxpowMalformedCoinbase:    "ErrAuxpowMalformedCoinbase",
+	ErrAuxpowNoHeader:             "ErrAuxpowNoHeader",
+	ErrAuxpowMultipleHeaders:      "ErrAuxpowMultipleHeaders",
+	ErrAuxpowWrongSize:            "ErrAuxpowWrongSize",
+	ErrAuxpowWrongIndex:           "ErrAuxpowWrongIndex",
+	ErrAuxpowBadTx:                "ErrAuxpowBadTx",
+  ErrMultipleNameInputs:         "ErrMultipleNameInputs",
+  ErrMultipleNameOutputs:        "ErrMultipleNameOutputs",
+  ErrGreedyName:                 "ErrGreedyName",
+  ErrNoNameOutputs:              "ErrNoNameOutputs",
+  ErrNameNewWithPreviousNameInput: "ErrNameNewWithPreviousNameInput",
+  ErrNonNameTxHasNameInputs:     "ErrNonNameTxHasNameInputs",
+  ErrNonNameTxHasNameOutputs:    "ErrNonNameTxHasNameOutputs",
+  ErrNameTooLong:                "ErrNameTooLong",
+  ErrNameValueTooLong:           "ErrNameValueTooLong",
+  ErrNameUpdateMismatch:         "ErrNameUpdateMismatch",
+  ErrNameUpdateWithNonUpdateInput: "ErrNameUpdateWithNonUpdateInput",
+  ErrNameUpdateWithoutPreviousNameInput: "ErrNameUpdateWithoutPreviousNameInput",
+  ErrNameExpired:                "ErrNameExpired",
+  ErrNameArgumentWrongSize:      "ErrNameArgumentWrongSize",
+  ErrNameNotMatured:             "ErrNameNotMatured",
+  ErrNameFirstUpdateWithNonNewInput: "ErrNameFirstUpdateWithNonNewInput",
+  ErrNameHashMismatch:           "ErrNameHashMismatch",
+  ErrNameFirstUpdateOnUnexpiredName: "ErrNameFirstUpdateOnUnexpiredName",
 }
 
 // String returns the ErrorCode as a human-readable name.
